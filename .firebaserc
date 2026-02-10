@@ -1,0 +1,28 @@
+{
+  "projects": {
+    "default": "blade-bourbon-studio"
+  },
+  "targets": {
+    "blade-bourbon-studio": {
+      "hosting": {
+        "public": [
+          "blade-bourbon-studio"
+        ],
+        "staff": [
+          "staff-bladebourbon"
+        ]
+      }
+    },
+    "blade-bourbon-studio-v2": {
+      "hosting": {
+        "staff": [
+          "staff-bladebourbon"
+        ],
+        "public": [
+          "blade-bourbon-studio"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
