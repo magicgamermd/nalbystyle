@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 const SONIOX_WS_URL = 'wss://api.soniox.com/transcribe';
-const ELEVENLABS_URL = 'https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB/stream';
+// Voice: "George" (deep, clear male) — output mp3_22050_32 for faster streaming
+const ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'; // George
+const ELEVENLABS_URL = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}/stream?output_format=mp3_22050_32&optimize_streaming_latency=3`;
 
 // Get API keys from Cloudflare Pages Function
 const getApiKeys = async () => {
@@ -104,8 +106,8 @@ export const VoiceAgentHybrid: React.FC<{ shopName?: string }> = ({ shopName = '
         },
         body: JSON.stringify({
           text: response,
-          model_id: 'eleven_multilingual_v2',
-          voice_settings: { stability: 0.35, similarity_boost: 0.85, style: 0.4 },
+          model_id: 'eleven_turbo_v2_5',
+          voice_settings: { stability: 0.55, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
         }),
       });
 
@@ -225,8 +227,8 @@ export const VoiceAgentHybrid: React.FC<{ shopName?: string }> = ({ shopName = '
       },
       body: JSON.stringify({
         text: welcome,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: 0.35, similarity_boost: 0.85 },
+        model_id: 'eleven_turbo_v2_5',
+        voice_settings: { stability: 0.55, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
       }),
     });
     
