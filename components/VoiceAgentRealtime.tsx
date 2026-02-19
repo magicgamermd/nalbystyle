@@ -109,12 +109,16 @@ export const VoiceAgentRealtime: React.FC<{ shopName?: string }> = ({ shopName =
     setStatus('connecting');
 
     try {
-      // 1. Get ephemeral token
+      // 1. Get microphone FIRST (before anything else!)
+      //    This triggers the browser permission prompt immediately
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // 2. Get ephemeral token (while mic is already granted)
       const tokenRes = await fetch(TOKEN_URL);
       if (!tokenRes.ok) throw new Error('Token server error');
       const { client_secret } = await tokenRes.json();
 
-      // 2. WebRTC setup
+      // 3. WebRTC setup
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
@@ -128,14 +132,13 @@ export const VoiceAgentRealtime: React.FC<{ shopName?: string }> = ({ shopName =
         setupAnalyser(e.streams[0]);
       };
 
-      // Local mic → OpenAI
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Local mic → OpenAI (already granted)
       micStream.getTracks().forEach(t => pc.addTrack(t, micStream));
 
       // Data channel for events
       const dc = pc.createDataChannel('oai-events');
       dc.onopen = () => {
-        // Trigger assistant to speak first
+        // Trigger assistant to speak first — mic is already active!
         dc.send(JSON.stringify({ type: 'response.create' }));
       };
       dc.onmessage = (e) => {
