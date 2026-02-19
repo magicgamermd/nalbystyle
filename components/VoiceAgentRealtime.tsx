@@ -137,10 +137,7 @@ export const VoiceAgentRealtime: React.FC<{ shopName?: string }> = ({ shopName =
 
       // Data channel for events
       const dc = pc.createDataChannel('oai-events');
-      dc.onopen = () => {
-        // Trigger assistant to speak first — mic is already active!
-        dc.send(JSON.stringify({ type: 'response.create' }));
-      };
+      // Do NOT send response.create on dc.onopen — session isn't ready yet!
       dc.onmessage = (e) => {
         try {
           const ev = JSON.parse(e.data);
@@ -151,7 +148,16 @@ export const VoiceAgentRealtime: React.FC<{ shopName?: string }> = ({ shopName =
             // BARGE-IN: User started speaking → cancel agent response
             dc.send(JSON.stringify({ type: 'response.cancel' }));
           }
-          if (ev.type === 'session.created') setStatus('listening');
+
+          // Wait for session.created → THEN trigger first greeting
+          // This ensures mic audio is flowing before agent speaks
+          if (ev.type === 'session.created') {
+            setStatus('listening');
+            // Small delay to ensure audio tracks are fully negotiated
+            setTimeout(() => {
+              dc.send(JSON.stringify({ type: 'response.create' }));
+            }, 500);
+          }
 
           // Transcript logging → server
           if (ev.type === 'conversation.item.input_audio_transcription.completed' && ev.transcript) {
