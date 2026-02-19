@@ -72,6 +72,9 @@ export async function onRequest(context) {
 
   try {
     // Create ephemeral Realtime session via OpenAI API
+    // NOTE: Do NOT set input_audio_format/output_audio_format for WebRTC!
+    // WebRTC negotiates audio codec (Opus) via SDP automatically.
+    // Setting pcm16 breaks it — OpenAI expects PCM but receives Opus.
     const sessionConfig = {
       model: 'gpt-4o-realtime-preview',
       voice: 'verse',
@@ -83,8 +86,6 @@ export async function onRequest(context) {
         type: 'semantic_vad',
         eagerness: 'medium',
       },
-      input_audio_format: 'pcm16',
-      output_audio_format: 'pcm16',
     };
 
     const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
