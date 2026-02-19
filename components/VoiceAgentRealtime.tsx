@@ -1,6 +1,19 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 const TOKEN_URL = import.meta.env.DEV ? 'http://localhost:3002/session' : '/session';
+const LOG_URL = import.meta.env.DEV ? '' : '/log';
+const SESSION_ID = Math.random().toString(36).slice(2, 8);
+
+function sendLog(role: string, text: string) {
+  console.log(`[${role}]:`, text);
+  if (LOG_URL) {
+    fetch(LOG_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, text, sessionId: SESSION_ID }),
+    }).catch(() => {});
+  }
+}
 
 type Status = 'idle' | 'connecting' | 'listening' | 'speaking';
 
@@ -133,12 +146,12 @@ export const VoiceAgentRealtime: React.FC<{ shopName?: string }> = ({ shopName =
           if (ev.type === 'input_audio_buffer.speech_started') setStatus('listening');
           if (ev.type === 'session.created') setStatus('listening');
 
-          // Transcript logging
-          if (ev.type === 'conversation.item.input_audio_transcription.completed') {
-            console.log('[USER]:', ev.transcript);
+          // Transcript logging → server
+          if (ev.type === 'conversation.item.input_audio_transcription.completed' && ev.transcript) {
+            sendLog('USER', ev.transcript);
           }
-          if (ev.type === 'response.audio_transcript.done') {
-            console.log('[AGENT]:', ev.transcript);
+          if (ev.type === 'response.audio_transcript.done' && ev.transcript) {
+            sendLog('AGENT', ev.transcript);
           }
         } catch {}
       };
