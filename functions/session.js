@@ -1,409 +1,122 @@
-// functions/session.js - Cloudflare Pages Function for secure token endpoints
-// This provides secure access to API keys without exposing them in client code
+// functions/session.js — Cloudflare Pages Function
+// Creates an OpenAI Realtime ephemeral session and returns client_secret
 
-/**
- * Environment variables needed (set in Cloudflare Pages dashboard):
- * - SONIOX_API_KEY
- * - OPENAI_API_KEY  
- * - ELEVENLABS_API_KEY
- * - ALLOWED_ORIGINS (comma-separated list of allowed origins, or * for any)
- */
-
-// CORS headers
 function getCorsHeaders(request, env) {
   const origin = request.headers.get('Origin') || '*';
-  const allowedOrigins = env.ALLOWED_ORIGINS?.split(',') || ['*'];
-  
-  const corsOrigin = allowedOrigins.includes('*') || allowedOrigins.includes(origin) 
-    ? origin 
-    : allowedOrigins[0];
-
   return {
-    'Access-Control-Allow-Origin': corsOrigin,
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
   };
 }
 
-// Handle CORS preflight
-function handleCors(request, env) {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: getCorsHeaders(request, env),
-    });
-  }
-  return null;
-}
+function buildSystemPrompt() {
+  // Sofia time
+  const now = new Date(Date.now() + 2 * 3600_000); // approximate UTC+2
+  const hh = now.getUTCHours(), mm = now.getUTCMinutes();
+  const pad = (n) => String(n).padStart(2, '0');
+  const timeStr = `${pad(hh)}:${pad(mm)}`;
+  const dayNames = ['неделя','понеделник','вторник','сряда','четвъртък','петък','събота'];
+  const dayName = dayNames[now.getUTCDay()];
 
-// Verify request is authenticated (optional - add your own auth logic)
-function verifyAuth(request, env) {
-  // Add your authentication logic here
-  // For example, check for a valid session token or API key
-  const authHeader = request.headers.get('Authorization');
-  
-  // Example: Check for a bearer token
-  // if (!authHeader || !authHeader.startsWith('Bearer ')) {
-  //   return false;
-  // }
-  
-  // For now, allow all requests (implement your own security)
-  return true;
+  return `Ти си гласов асистент на бръснарница "Налби Стайл" в град Троян, България.
+
+СТИЛ НА ГОВОРЕНЕ:
+- Говори САМО на български
+- Кратки отговори — 1–2 изречения максимум
+- Приятелски и спокоен тон, като готин приятел
+- НЕ казвай "Здравейте, как мога да ви помогна" — кажи нещо като "Здравей! Налби Стайл, какво ще правим?"
+
+ИНФОРМАЦИЯ ЗА САЛОНА:
+- Работно време: Понеделник–Събота 09:00–19:00, Неделя — почивен ден
+- Адрес: ул. Васил Левски 45, Троян
+- Сега е ${dayName}, ${timeStr} часа (София)
+- Услуги: подстригване мъже (20лв), бръснене (15лв), комбо подстригване+бръснене (30лв), оформяне на брада (12лв), детско подстригване до 12г (15лв)
+
+ЗАПИСВАНЕ НА ЧАС:
+Стъпки (следвай ги една по една):
+1. Питай за УСЛУГА — каква услуга желае?
+2. Питай за ПРЕДПОЧИТАН ДЕН И ЧАС — кога му е удобно?
+3. Питай за ИМЕ — на какво име да запишем?
+4. Питай за ТЕЛЕФОНЕН НОМЕР — за потвърждение
+
+ТЕЛЕФОНЕН НОМЕР — КРИТИЧНО ВАЖНО:
+- Когато клиентът казва номер, изчакай го да довърши — НЕ го прекъсвай!
+- Българските номера имат 10 цифри (обикновено започват с 08)
+- Ако чуеш по-малко от 10 цифри, попитай: "Останалите цифри?"
+- ВИНАГИ повтори номера цифра по цифра за потвърждение: "Значи нула осем седем девет, нула шест нула, осем едно три — правилно ли е?"
+- Ако клиентът каже "да" — продължи. Ако каже "не" — помоли го да повтори целия номер
+
+5. Обобщи записването и потвърди
+
+ВАЖНО:
+- Ако питат нещо извън записване — отговори кратко и върни разговора към записването
+- Ако салонът е затворен в момента — предложи следващия работен ден`;
 }
 
 export async function onRequest(context) {
   const { request, env } = context;
-  
-  // Handle CORS
-  const corsResponse = handleCors(request, env);
-  if (corsResponse) return corsResponse;
 
-  // Only allow POST and GET
-  if (request.method !== 'POST' && request.method !== 'GET') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: {
-        ...getCorsHeaders(request, env),
-        'Content-Type': 'application/json',
-      },
-    });
+  // CORS preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: getCorsHeaders(request, env) });
   }
 
-  // Verify authentication (optional)
-  if (!verifyAuth(request, env)) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
-      headers: {
-        ...getCorsHeaders(request, env),
-        'Content-Type': 'application/json',
-      },
+  if (!env.OPENAI_API_KEY) {
+    return new Response(JSON.stringify({ error: 'OPENAI_API_KEY not set' }), {
+      status: 500,
+      headers: { ...getCorsHeaders(request, env), 'Content-Type': 'application/json' },
     });
   }
 
   try {
-    // Parse the URL to determine which token to return
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    // Route based on path
-    if (path.includes('/session/soniox')) {
-      return await getSonioxToken(request, env);
-    } else if (path.includes('/session/openai')) {
-      return await getOpenAIToken(request, env);
-    } else if (path.includes('/session/elevenlabs')) {
-      return await getElevenLabsToken(request, env);
-    } else if (path.includes('/session/all')) {
-      return await getAllTokens(request, env);
-    } else {
-      // Default: return status
-      return new Response(JSON.stringify({ 
-        status: 'ok',
-        endpoints: [
-          '/session/soniox - Get Soniox WebSocket URL',
-          '/session/openai - Get OpenAI token info',
-          '/session/elevenlabs - Get ElevenLabs token',
-          '/session/all - Get all tokens at once',
-        ]
-      }), {
-        status: 200,
-        headers: {
-          ...getCorsHeaders(request, env),
-          'Content-Type': 'application/json',
-        },
-      });
-    }
-  } catch (error) {
-    console.error('Session error:', error);
-    return new Response(JSON.stringify({ 
-      error: 'Internal server error',
-      message: error.message 
-    }), {
-      status: 500,
-      headers: {
-        ...getCorsHeaders(request, env),
-        'Content-Type': 'application/json',
+    // Create ephemeral Realtime session via OpenAI API
+    const sessionConfig = {
+      model: 'gpt-4o-realtime-preview',
+      voice: 'verse',
+      instructions: buildSystemPrompt(),
+      input_audio_transcription: {
+        model: 'gpt-4o-mini-transcribe',
       },
-    });
-  }
-}
-
-// Get Soniox WebSocket configuration
-async function getSonioxToken(request, env) {
-  if (!env.SONIOX_API_KEY) {
-    return new Response(JSON.stringify({ error: 'Soniox API key not configured' }), {
-      status: 500,
-      headers: {
-        ...getCorsHeaders(request, env),
-        'Content-Type': 'application/json',
+      turn_detection: {
+        type: 'semantic_vad',
+        eagerness: 'medium',
       },
-    });
-  }
+      input_audio_format: 'pcm16',
+      output_audio_format: 'pcm16',
+    };
 
-  // Soniox uses the API key directly in the WebSocket URL
-  // We return a temporary session or the config needed
-  const sessionId = generateSessionId();
-  
-  return new Response(JSON.stringify({
-    success: true,
-    sessionId,
-    websocketUrl: `wss://api.soniox.com/transcribe-websocket`,
-    // In production, you might want to implement a proxy or token exchange
-    // For now, the client will use the API key directly
-    config: {
-      apiKeyPresent: true, // Client should have its own key or use a proxy
-      recommendedLanguage: 'bg',
-      recommendedSampleRate: 16000,
-    }
-  }), {
-    status: 200,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-// Get OpenAI configuration
-async function getOpenAIToken(request, env) {
-  if (!env.OPENAI_API_KEY) {
-    return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
-      status: 500,
-      headers: {
-        ...getCorsHeaders(request, env),
-        'Content-Type': 'application/json',
-      },
-    });
-  }
-
-  const sessionId = generateSessionId();
-  
-  // Return the API key securely (in production, consider a proxy)
-  return new Response(JSON.stringify({
-    success: true,
-    sessionId,
-    apiKey: env.OPENAI_API_KEY,
-    model: 'gpt-4o',
-    maxTokens: 300,
-  }), {
-    status: 200,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-// Get ElevenLabs configuration
-async function getElevenLabsToken(request, env) {
-  if (!env.ELEVENLABS_API_KEY) {
-    return new Response(JSON.stringify({ error: 'ElevenLabs API key not configured' }), {
-      status: 500,
-      headers: {
-        ...getCorsHeaders(request, env),
-        'Content-Type': 'application/json',
-      },
-    });
-  }
-
-  const sessionId = generateSessionId();
-  
-  // Get available voices
-  let voices = [];
-  try {
-    const voicesResponse = await fetch('https://api.elevenlabs.io/v1/voices', {
-      headers: {
-        'xi-api-key': env.ELEVENLABS_API_KEY,
-      },
-    });
-    
-    if (voicesResponse.ok) {
-      const voicesData = await voicesResponse.json();
-      voices = voicesData.voices
-        .filter(v => v.labels?.language === 'bg' || !v.labels?.language) // Bulgarian or multilingual
-        .map(v => ({
-          id: v.voice_id,
-          name: v.name,
-          previewUrl: v.preview_url,
-        }));
-    }
-  } catch (e) {
-    console.error('Failed to fetch voices:', e);
-  }
-
-  return new Response(JSON.stringify({
-    success: true,
-    sessionId,
-    apiKey: env.ELEVENLABS_API_KEY,
-    defaultVoiceId: 'JBFqnCBsd6RMkjVDRZzb', // Default alloy-like voice
-    recommendedModel: 'eleven_multilingual_v2',
-    voices,
-  }), {
-    status: 200,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-// Get all tokens at once
-async function getAllTokens(request, env) {
-  const sessionId = generateSessionId();
-  
-  const tokens = {
-    success: true,
-    sessionId,
-    soniox: env.SONIOX_API_KEY ? {
-      configured: true,
-      websocketUrl: 'wss://api.soniox.com/transcribe-websocket',
-      language: 'bg',
-      sampleRate: 16000,
-    } : { configured: false },
-    openai: env.OPENAI_API_KEY ? {
-      configured: true,
-      apiKey: env.OPENAI_API_KEY,
-      model: 'gpt-4o',
-    } : { configured: false },
-    elevenlabs: env.ELEVENLABS_API_KEY ? {
-      configured: true,
-      apiKey: env.ELEVENLABS_API_KEY,
-      defaultVoiceId: 'JBFqnCBsd6RMkjVDRZzb',
-      model: 'eleven_multilingual_v2',
-    } : { configured: false },
-  };
-
-  return new Response(JSON.stringify(tokens), {
-    status: 200,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-// Generate a unique session ID
-function generateSessionId() {
-  return 'sess_' + Math.random().toString(36).substring(2, 15) + 
-         Math.random().toString(36).substring(2, 15);
-}
-
-// Alternative: Proxy requests through Cloudflare (more secure)
-// This keeps API keys on the server side only
-
-export async function onRequestPost(context) {
-  const { request, env } = context;
-  
-  // Handle CORS
-  const corsResponse = handleCors(request, env);
-  if (corsResponse) return corsResponse;
-
-  const url = new URL(request.url);
-  
-  // Proxy endpoint for Soniox (more secure - API key never reaches client)
-  if (url.pathname.includes('/proxy/soniox')) {
-    return await proxySoniox(request, env);
-  }
-  
-  // Proxy endpoint for OpenAI
-  if (url.pathname.includes('/proxy/openai')) {
-    return await proxyOpenAI(request, env);
-  }
-  
-  // Proxy endpoint for ElevenLabs
-  if (url.pathname.includes('/proxy/elevenlabs')) {
-    return await proxyElevenLabs(request, env);
-  }
-
-  return new Response(JSON.stringify({ error: 'Unknown proxy endpoint' }), {
-    status: 404,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-// Proxy Soniox requests (keeps API key secure)
-async function proxySoniox(request, env) {
-  if (!env.SONIOX_API_KEY) {
-    return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500 });
-  }
-
-  // This would need to handle WebSocket upgrade for real-time streaming
-  // For REST API calls:
-  const body = await request.text();
-  const response = await fetch('https://api.soniox.com/v1/transcribe', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${env.SONIOX_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body,
-  });
-
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': response.headers.get('Content-Type') || 'application/json',
-    },
-  });
-}
-
-// Proxy OpenAI requests
-async function proxyOpenAI(request, env) {
-  if (!env.OPENAI_API_KEY) {
-    return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500 });
-  }
-
-  const body = await request.text();
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body,
-  });
-
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': response.headers.get('Content-Type') || 'application/json',
-    },
-  });
-}
-
-// Proxy ElevenLabs requests
-async function proxyElevenLabs(request, env) {
-  if (!env.ELEVENLABS_API_KEY) {
-    return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500 });
-  }
-
-  const url = new URL(request.url);
-  const voiceId = url.searchParams.get('voiceId') || 'JBFqnCBsd6RMkjVDRZzb';
-  
-  const body = await request.text();
-  const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
-    {
+    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
       method: 'POST',
       headers: {
-        'xi-api-key': env.ELEVENLABS_API_KEY,
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
-        'Accept': 'audio/mpeg',
       },
-      body,
-    }
-  );
+      body: JSON.stringify(sessionConfig),
+    });
 
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      ...getCorsHeaders(request, env),
-      'Content-Type': response.headers.get('Content-Type') || 'audio/mpeg',
-    },
-  });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('OpenAI session error:', response.status, errText);
+      return new Response(JSON.stringify({ error: 'Failed to create session', detail: errText }), {
+        status: response.status,
+        headers: { ...getCorsHeaders(request, env), 'Content-Type': 'application/json' },
+      });
+    }
+
+    const sessionData = await response.json();
+
+    // Return ephemeral client_secret to the frontend
+    return new Response(JSON.stringify(sessionData), {
+      status: 200,
+      headers: { ...getCorsHeaders(request, env), 'Content-Type': 'application/json' },
+    });
+  } catch (err) {
+    console.error('Session creation failed:', err);
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { ...getCorsHeaders(request, env), 'Content-Type': 'application/json' },
+    });
+  }
 }
