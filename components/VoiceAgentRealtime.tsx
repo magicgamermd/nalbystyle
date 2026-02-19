@@ -206,9 +206,15 @@ export const VoiceAgentRealtime: React.FC<{ shopName?: string }> = ({ shopName =
           style={{ transform: 'scale(1.5)' }}
         />
         <div className={`relative z-10 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+          status === 'connecting' ? 'bg-gold-500/30 border border-gold-500/70' :
           isActive ? 'bg-red-600/80 hover:bg-red-500' : 'bg-gold-500/20 hover:bg-gold-500/40 border border-gold-500/50'
         }`}>
-          {isActive ? (
+          {status === 'connecting' ? (
+            <svg className="w-6 h-6 text-gold-400 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+          ) : isActive ? (
             <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
               <rect x="6" y="6" width="12" height="12" rx="1"/>
             </svg>
