@@ -11,6 +11,7 @@ import { ServiceCatalog } from './components/ServiceCatalog';
 import { BarberShowcase } from './components/BarberShowcase';
 import { StaffPortal } from './components/StaffPortal';
 import { VoiceAgent } from './components/VoiceAgent';
+import { VoiceAgentRealtime } from './components/VoiceAgentRealtime';
 import { AnimatePresence } from 'framer-motion';
 import { AnimatedPage } from './components/AnimatedPage';
 import { t } from './utils/translations';
@@ -314,9 +315,9 @@ const App: React.FC = () => {
   };
 
   const brandName = shopConfig?.branding?.name || 'Nalby Style';
-  const logoUrl = shopConfig?.branding?.logoUrl || '/images/nalby-logo.png';
-  const heroMobile = shopConfig?.hero?.mobileUrl || '';
-  const heroDesktop = shopConfig?.hero?.desktopUrl || '';
+  const logoUrl = '/images/nalby-logo.png';
+  const heroMobile = '/images/nalby-hero-mobile.jpg';
+  const heroDesktop = '/images/nalby-hero-desktop.jpg';
   const contactAddress = shopConfig?.contact?.address || T.contact.address;
   const contactPhone = shopConfig?.contact?.phone || T.contact.phone;
   const contactEmail = shopConfig?.contact?.email || T.contact.email;
@@ -478,12 +479,19 @@ const App: React.FC = () => {
                 {/* Hero Section */}
                 <div
                   className="relative h-[80vh] flex items-end justify-center overflow-hidden pb-16"
-                  style={{
-                    '--bg-mobile': `url(${heroMobile || logoUrl || '/images/nalby-logo.png'})`,
-                    '--bg-desktop': `url(${heroDesktop || heroMobile || logoUrl || '/images/nalby-logo.png'})`
-                  } as React.CSSProperties}
                 >
-                  <div className="absolute inset-0 bg-[image:var(--bg-mobile)] md:bg-[image:var(--bg-desktop)] bg-cover bg-center transition-all duration-500">
+                  {/* Mobile hero image */}
+                  <div
+                    className="absolute inset-0 md:hidden bg-cover bg-center transition-all duration-500"
+                    style={{ backgroundImage: `url(${heroMobile || '/images/nalby-hero-mobile.jpg'})` }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-transparent"></div>
+                  </div>
+                  {/* Desktop hero image */}
+                  <div
+                    className="absolute inset-0 hidden md:block bg-cover bg-center transition-all duration-500"
+                    style={{ backgroundImage: `url(${heroDesktop || '/images/nalby-hero-desktop.jpg'})` }}
+                  >
                     <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-transparent"></div>
                   </div>
 
@@ -669,15 +677,8 @@ const App: React.FC = () => {
       )}
 
       {/* Voice Agent - only for customers (not in staff portal) */}
-      {!import.meta.env.VITE_STAFF_ONLY && view !== 'admin' && view !== 'staff' && voiceEnabled && shopId && (
-        <VoiceAgent
-          state={appState}
-          onBook={handleBooking}
-          lang={lang}
-          shopId={shopId}
-          shopName={brandName}
-          assistantName={assistantName}
-        />
+      {!import.meta.env.VITE_STAFF_ONLY && view !== 'admin' && view !== 'staff' && (
+        <VoiceAgentRealtime shopName={brandName} />
       )}
 
       {/* Footer */}
