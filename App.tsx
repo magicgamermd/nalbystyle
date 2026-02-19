@@ -10,7 +10,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { ServiceCatalog } from './components/ServiceCatalog';
 import { BarberShowcase } from './components/BarberShowcase';
 import { StaffPortal } from './components/StaffPortal';
-import { VoiceAgentRealtime } from './components/VoiceAgentRealtime';
+import { VoiceAgentHybrid } from './components/VoiceAgentHybrid';
 import { AnimatePresence } from 'framer-motion';
 import { AnimatedPage } from './components/AnimatedPage';
 import { t } from './utils/translations';
@@ -677,7 +677,7 @@ const App: React.FC = () => {
 
       {/* Voice Agent - only for customers (not in staff portal) */}
       {!import.meta.env.VITE_STAFF_ONLY && view !== 'admin' && view !== 'staff' && (
-        <VoiceAgentRealtime shopName={brandName} />
+        <VoiceAgentHybrid shopName={brandName} />
       )}
 
       {/* Footer */}

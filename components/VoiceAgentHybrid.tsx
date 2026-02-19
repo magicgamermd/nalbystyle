@@ -22,6 +22,7 @@ export const VoiceAgentHybrid: React.FC<{ shopName?: string }> = ({ shopName = '
   const currentTranscriptRef = useRef('');
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const apiKeysRef = useRef<{ soniox?: string; openai?: string; elevenlabs?: string }>({});
+  const messagesRef = useRef<Array<{ role: string; content: string }>>([]);
 
   const isActive = status !== 'idle';
 
@@ -30,12 +31,46 @@ export const VoiceAgentHybrid: React.FC<{ shopName?: string }> = ({ shopName = '
     getApiKeys().then(keys => { apiKeysRef.current = keys; });
   }, []);
 
+  // Build system prompt with current time
+  const getSystemPrompt = useCallback(() => {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('bg-BG', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Sofia' });
+    const dayNames = ['неделя','понеделник','вторник','сряда','четвъртък','петък','събота'];
+    const dayName = dayNames[now.getDay()];
+    
+    return `Ти си гласов асистент на бръснарница "${shopName}" в град Троян, България.
+
+СТИЛ: Говори САМО на български. Кратки отговори — 1–2 изречения. Приятелски тон, като готин приятел.
+
+ИНФО ЗА САЛОНА:
+- Работно време: Пон–Съб 09:00–19:00, Неделя — почивен ден
+- Адрес: ул. Васил Левски 45, Троян
+- Сега е ${dayName}, ${timeStr} часа
+- Услуги: подстригване мъже (20лв), бръснене (15лв), комбо подстригване+бръснене (30лв), оформяне на брада (12лв), детско подстригване до 12г (15лв)
+
+ЗАПИСВАНЕ НА ЧАС (следвай стъпките една по една):
+1. Питай за УСЛУГА
+2. Питай за ПРЕДПОЧИТАН ДЕН И ЧАС
+3. Питай за ИМЕ
+4. Питай за ТЕЛЕФОНЕН НОМЕР
+
+ТЕЛЕФОНЕН НОМЕР — КРИТИЧНО:
+- Българските номера имат 10 цифри (започват с 08)
+- Ако чуеш по-малко от 10 цифри, попитай: "Останалите цифри?"
+- ВИНАГИ повтори номера цифра по цифра: "Значи нула осем седем девет, нула шест нула, осем едно три — правилно ли е?"
+
+5. Обобщи записването и потвърди`;
+  }, [shopName]);
+
   // Send to GPT-4o and speak response
   const processAndSpeak = useCallback(async (text: string) => {
     setStatus('processing');
     
     try {
-      // 1. GPT-4o response
+      // Add user message to conversation history
+      messagesRef.current.push({ role: 'user', content: text });
+      
+      // 1. GPT-4o response with full conversation history
       const gptRes = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -45,21 +80,19 @@ export const VoiceAgentHybrid: React.FC<{ shopName?: string }> = ({ shopName = '
         body: JSON.stringify({
           model: 'gpt-4o',
           messages: [
-            {
-              role: 'system',
-              content: `Ти си Наби от ${shopName}. Говориш на български. Кратко, живо.
-
-FLOW: Услуга → Ден/час → Име → Телефон → Потвърждение
-
-ТЕЛЕФОН: Събирай цифрите. Когато имаш 10, кажи: "Значи 089... така ли?"`},
-            { role: 'user', content: text }
+            { role: 'system', content: getSystemPrompt() },
+            ...messagesRef.current,
           ],
           temperature: 0.7,
+          max_tokens: 150,
         }),
       });
       
       const gptData = await gptRes.json();
       const response = gptData.choices[0].message.content;
+      
+      // Save assistant response to conversation history
+      messagesRef.current.push({ role: 'assistant', content: response });
 
       // 2. ElevenLabs TTS
       setStatus('speaking');
@@ -164,13 +197,23 @@ FLOW: Услуга → Ден/час → Име → Телефон → Потв�
   const startCall = useCallback(async () => {
     setError(null);
     currentTranscriptRef.current = '';
+    messagesRef.current = []; // Reset conversation history
     
-    // Get API keys first
+    // 1. Request mic permission FIRST (before anything else!)
+    try {
+      const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      testStream.getTracks().forEach(t => t.stop()); // Release immediately, just need permission
+    } catch {
+      setError('Няма достъп до микрофона');
+      return;
+    }
+    
+    // 2. Get API keys
     if (!apiKeysRef.current.soniox) {
       await getApiKeys().then(keys => { apiKeysRef.current = keys; });
     }
     
-    // Welcome message
+    // 3. Welcome message (mic already permitted)
     setStatus('speaking');
     const welcome = `Здрасти! ${shopName} — казвай.`;
     
