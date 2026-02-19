@@ -143,7 +143,11 @@ export const VoiceAgentRealtime: React.FC<{ shopName?: string }> = ({ shopName =
           const ev = JSON.parse(e.data);
           if (ev.type === 'response.audio.delta') setStatus('speaking');
           if (ev.type === 'response.audio.done') setStatus('listening');
-          if (ev.type === 'input_audio_buffer.speech_started') setStatus('listening');
+          if (ev.type === 'input_audio_buffer.speech_started') {
+            setStatus('listening');
+            // BARGE-IN: User started speaking → cancel agent response
+            dc.send(JSON.stringify({ type: 'response.cancel' }));
+          }
           if (ev.type === 'session.created') setStatus('listening');
 
           // Transcript logging → server

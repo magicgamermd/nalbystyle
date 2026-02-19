@@ -76,7 +76,7 @@ FLOW — СТРОГО по 1 въпрос, после МЪЛЧИ и ЧАКАЙ �
       },
       body: JSON.stringify({
         model: 'gpt-4o-realtime-preview',
-        voice: 'verse',
+        voice: 'alloy',
         instructions: SYSTEM_PROMPT,
         input_audio_transcription: { model: 'gpt-4o-mini-transcribe' },
         turn_detection: {
