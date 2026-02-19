@@ -75,7 +75,7 @@ FLOW — СТРОГО по 1 въпрос, после МЪЛЧИ и ЧАКАЙ �
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini-realtime-preview',
+        model: 'gpt-4o-realtime-preview',
         voice: 'verse',
         instructions: SYSTEM_PROMPT,
         input_audio_transcription: { model: 'gpt-4o-mini-transcribe' },
