@@ -1,96 +1,108 @@
+// types.ts - Type definitions for Voice Agent
 
-export type Language = 'en' | 'bg';
+export type ConversationStep = 'service' | 'datetime' | 'name' | 'phone' | 'confirmation' | 'complete';
 
-export interface Service {
-  id: string;
-  name: string;
-  nameBg: string;
-  price: number | string; // Changed to allow string for "Specialist" or ranges
-  duration: number; // in minutes
-  description: string;
-  descriptionBg: string;
-  icon: string; // FontAwesome class
-  imageUrl?: string; // New: For AI generated images
+export interface BookingData {
+  service: string | null;
+  dateTime: string | null;
+  name: string | null;
+  phone: string | null;
+  price: number | null;
 }
 
-export interface Barber {
-  id: string;
-  name: string;
-  nameBg: string;
-  specialty: string;
-  specialtyBg: string;
-  bio: string;
-  bioBg: string;
-  avatar: string;
-  rating: number;
-  username?: string; // New: For staff login
-  password?: string; // New: For staff login
-}
-
-export interface Appointment {
-  id: string;
-  customerName: string;
-  customerEmail: string;
-  serviceId: string;
-  barberId: string;
-  date: string; // ISO String
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
-}
-
-export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
+export interface ConversationMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
   timestamp: Date;
 }
 
-export interface AppState {
-  services: Service[];
-  barbers: Barber[];
-  appointments: Appointment[];
+export interface ConversationState {
+  currentStep: ConversationStep;
+  bookingData: BookingData;
+  history: ConversationMessage[];
+  isComplete: boolean;
 }
 
-export interface ShopBranding {
-  name: string;
-  tagline?: string;
-  logoUrl?: string;
-}
-
-export interface ShopHeroImages {
-  desktopUrl?: string;
-  mobileUrl?: string;
-}
-
-export interface ShopContact {
-  address: string;
-  phone: string;
-  email: string;
-}
-
-export interface ShopHours {
-  monFri: string;
-  sat: string;
-  sun: string;
-}
-
-export interface ShopFeatures {
-  voiceEnabled: boolean;
-  chatEnabled: boolean;
-  aiToolsEnabled: boolean;
-}
-
-export interface ShopConfig {
+export interface ServiceOption {
   id: string;
-  domains: string[];
-  adminUids: string[];
-  plan: 'basic' | 'pro' | 'premium';
-  branding: ShopBranding;
-  hero: ShopHeroImages;
-  contact: ShopContact;
-  hours: ShopHours;
-  themeId: string;
-  voiceAgentName: string;
-  features: ShopFeatures;
-  onboarded: boolean;
-  createdAt: number;
-  updatedAt?: number;
+  name: string;
+  nameBg: string;
+  price: number;
+  duration: number; // in minutes
+  description: string;
+  descriptionBg: string;
+}
+
+export const SERVICES: ServiceOption[] = [
+  {
+    id: 'haircut',
+    name: 'Haircut',
+    nameBg: 'Подстригване',
+    price: 40,
+    duration: 30,
+    description: 'Classic haircut with wash',
+    descriptionBg: 'Класическо подстригване с измиване',
+  },
+  {
+    id: 'shave',
+    name: 'Classic Shave',
+    nameBg: 'Класическо бръснене',
+    price: 35,
+    duration: 25,
+    description: 'Hot towel straight razor shave',
+    descriptionBg: 'Бръснене с прав бръснач и гореща кърпа',
+  },
+  {
+    id: 'combo',
+    name: 'Combo',
+    nameBg: 'Комбо',
+    price: 65,
+    duration: 50,
+    description: 'Haircut + Classic shave',
+    descriptionBg: 'Подстригване + Класическо бръснене',
+  },
+  {
+    id: 'beard',
+    name: 'Beard Trim',
+    nameBg: 'Оформяне на брада',
+    price: 25,
+    duration: 20,
+    description: 'Beard shaping and trimming',
+    descriptionBg: 'Оформяне и подстригване на брада',
+  },
+];
+
+export interface SonioxConfig {
+  apiKey: string;
+  language: string;
+  sampleRate: number;
+  enableSpeakerDiarization?: boolean;
+  enablePunctuation?: boolean;
+}
+
+export interface ElevenLabsConfig {
+  apiKey: string;
+  voiceId: string;
+  modelId: string;
+  stability?: number;
+  similarityBoost?: number;
+  style?: number;
+  useSpeakerBoost?: boolean;
+}
+
+export interface VADOptions {
+  threshold?: number;
+  silenceTimeout?: number;
+  minSpeechDuration?: number;
+}
+
+export type AgentStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
+
+export interface AudioCaptureOptions {
+  sampleRate?: number;
+  bufferSize?: number;
+  channels?: number;
+  echoCancellation?: boolean;
+  noiseSuppression?: boolean;
+  autoGainControl?: boolean;
 }

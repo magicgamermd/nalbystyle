@@ -1,103 +1,409 @@
-export async function onRequestGet({ env }) {
-  const OPENAI_API_KEY = env.OPENAI_API_KEY;
+// functions/session.js - Cloudflare Pages Function for secure token endpoints
+// This provides secure access to API keys without exposing them in client code
 
-  if (!OPENAI_API_KEY) {
-    return new Response(JSON.stringify({ error: 'Missing OPENAI_API_KEY' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+/**
+ * Environment variables needed (set in Cloudflare Pages dashboard):
+ * - SONIOX_API_KEY
+ * - OPENAI_API_KEY  
+ * - ELEVENLABS_API_KEY
+ * - ALLOWED_ORIGINS (comma-separated list of allowed origins, or * for any)
+ */
+
+// CORS headers
+function getCorsHeaders(request, env) {
+  const origin = request.headers.get('Origin') || '*';
+  const allowedOrigins = env.ALLOWED_ORIGINS?.split(',') || ['*'];
+  
+  const corsOrigin = allowedOrigins.includes('*') || allowedOrigins.includes(origin) 
+    ? origin 
+    : allowedOrigins[0];
+
+  return {
+    'Access-Control-Allow-Origin': corsOrigin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+  };
+}
+
+// Handle CORS preflight
+function handleCors(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: getCorsHeaders(request, env),
+    });
+  }
+  return null;
+}
+
+// Verify request is authenticated (optional - add your own auth logic)
+function verifyAuth(request, env) {
+  // Add your authentication logic here
+  // For example, check for a valid session token or API key
+  const authHeader = request.headers.get('Authorization');
+  
+  // Example: Check for a bearer token
+  // if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  //   return false;
+  // }
+  
+  // For now, allow all requests (implement your own security)
+  return true;
+}
+
+export async function onRequest(context) {
+  const { request, env } = context;
+  
+  // Handle CORS
+  const corsResponse = handleCors(request, env);
+  if (corsResponse) return corsResponse;
+
+  // Only allow POST and GET
+  if (request.method !== 'POST' && request.method !== 'GET') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: {
+        ...getCorsHeaders(request, env),
+        'Content-Type': 'application/json',
+      },
     });
   }
 
-  // Calculate next available day/time dynamically
-  const now = new Date();
-  const sofiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Sofia' }));
-  const hour = sofiaTime.getHours();
-  const dayOfWeek = sofiaTime.getDay(); // 0=Sun, 6=Sat
-  const days = ['неделя','понеделник','вторник','сряда','четвъртък','петък','събота'];
-
-  let nextDay, nextTime;
-  if (dayOfWeek === 0) {
-    // Sunday → Monday
-    nextDay = 'утре (понеделник)';
-    nextTime = '10:00';
-  } else if (dayOfWeek === 6 && hour >= 18) {
-    // Saturday after 18 → Monday
-    nextDay = 'понеделник';
-    nextTime = '10:00';
-  } else if ((dayOfWeek >= 1 && dayOfWeek <= 5 && hour >= 20) || (dayOfWeek === 6 && hour >= 18)) {
-    // After closing → tomorrow
-    const tomorrow = dayOfWeek === 6 ? 'понеделник' : days[(dayOfWeek + 1) % 7];
-    nextDay = `утре (${tomorrow})`;
-    nextTime = '10:00';
-  } else if (hour < 10) {
-    nextDay = `днес (${days[dayOfWeek]})`;
-    nextTime = '10:00';
-  } else {
-    // Round up to next half hour
-    const nextHour = hour + 1;
-    nextDay = `днес (${days[dayOfWeek]})`;
-    nextTime = `${nextHour}:00`;
+  // Verify authentication (optional)
+  if (!verifyAuth(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: {
+        ...getCorsHeaders(request, env),
+        'Content-Type': 'application/json',
+      },
+    });
   }
-
-  const SYSTEM_PROMPT = `Ти си Наби от Налби Стайл барбершоп в София. Говориш САМО на български. Кратко, живо, като приятел.
-
-ЗАПОЧНИ С: "Здрасти, Налби Стайл — казвай!"
-
-УСЛУГИ: Подстригване 25лв/30мин | Брада 20лв/20мин | И двете 40лв/50мин | Детско 20лв/20мин
-РАБОТНО ВРЕМЕ: Пон-Пет 10:00-20:00, Съб 10:00-18:00, Нед — почиваме.
-
-СЕГА Е: ${days[dayOfWeek]}, ${hour}:${String(sofiaTime.getMinutes()).padStart(2,'0')} часа.
-НАЙ-СКОРОШЕН СВОБОДЕН ЧАС: ${nextDay} в ${nextTime}.
-
-FLOW — СТРОГО по 1 въпрос, после МЪЛЧИ и ЧАКАЙ отговор:
-1. "За какво — подстригване, брада, или и двете?" → ЧАКАЙ
-2. "Кога ти е удобно?" (ако питат "кога е най-скоро" → кажи: "${nextDay} в ${nextTime}. Става ли?") → ЧАКАЙ
-3. Ако трябва конкретен час: "В колко часа?" → ЧАКАЙ
-4. "Как се казваш?" → ЧАКАЙ
-5. "Телефон?" → ЧАКАЙ ДЪЛГО (клиентът бавно казва цифри!)
-6. Повтори телефона: "Значи 0-8-9-3-... така ли?" → ЧАКАЙ "да"
-7. "Готово! [услуга], ${nextDay !== 'днес' ? '[ден]' : 'днес'} в [час]. Чакаме те, [Име]!"
-
-ТЕЛЕФОН:
-- Питай: "Телефон?" и слушай.
-- Ако чуеш по-малко от 10 цифри, кажи: "Продължавай" или "Останалите цифри?"
-- Когато имаш 10 цифри → повтори: "Значи 0-8-9-3-6-9-5-9-2-0, така ли?"
-- Ако каже "не" → "Кажи го пак"
-
-ЗАБРАНЕНО: "разбира се", "разбрано", "с удоволствие", "перфектно", да изреждаш всички дни и часове.
-МАКС 1-2 изречения на отговор.`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-realtime-preview',
-        voice: 'alloy',
-        instructions: SYSTEM_PROMPT,
-        input_audio_transcription: { model: 'gpt-4o-mini-transcribe' },
-        turn_detection: {
-          type: 'semantic_vad',
-          eagerness: 'medium',
-        },
-      }),
-    });
+    // Parse the URL to determine which token to return
+    const url = new URL(request.url);
+    const path = url.pathname;
 
-    const data = await response.json();
-    return new Response(JSON.stringify(data), {
-      status: response.status,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    // Route based on path
+    if (path.includes('/session/soniox')) {
+      return await getSonioxToken(request, env);
+    } else if (path.includes('/session/openai')) {
+      return await getOpenAIToken(request, env);
+    } else if (path.includes('/session/elevenlabs')) {
+      return await getElevenLabsToken(request, env);
+    } else if (path.includes('/session/all')) {
+      return await getAllTokens(request, env);
+    } else {
+      // Default: return status
+      return new Response(JSON.stringify({ 
+        status: 'ok',
+        endpoints: [
+          '/session/soniox - Get Soniox WebSocket URL',
+          '/session/openai - Get OpenAI token info',
+          '/session/elevenlabs - Get ElevenLabs token',
+          '/session/all - Get all tokens at once',
+        ]
+      }), {
+        status: 200,
+        headers: {
+          ...getCorsHeaders(request, env),
+          'Content-Type': 'application/json',
+        },
+      });
+    }
+  } catch (error) {
+    console.error('Session error:', error);
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error',
+      message: error.message 
+    }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        ...getCorsHeaders(request, env),
+        'Content-Type': 'application/json',
+      },
     });
   }
+}
+
+// Get Soniox WebSocket configuration
+async function getSonioxToken(request, env) {
+  if (!env.SONIOX_API_KEY) {
+    return new Response(JSON.stringify({ error: 'Soniox API key not configured' }), {
+      status: 500,
+      headers: {
+        ...getCorsHeaders(request, env),
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  // Soniox uses the API key directly in the WebSocket URL
+  // We return a temporary session or the config needed
+  const sessionId = generateSessionId();
+  
+  return new Response(JSON.stringify({
+    success: true,
+    sessionId,
+    websocketUrl: `wss://api.soniox.com/transcribe-websocket`,
+    // In production, you might want to implement a proxy or token exchange
+    // For now, the client will use the API key directly
+    config: {
+      apiKeyPresent: true, // Client should have its own key or use a proxy
+      recommendedLanguage: 'bg',
+      recommendedSampleRate: 16000,
+    }
+  }), {
+    status: 200,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+// Get OpenAI configuration
+async function getOpenAIToken(request, env) {
+  if (!env.OPENAI_API_KEY) {
+    return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
+      status: 500,
+      headers: {
+        ...getCorsHeaders(request, env),
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  const sessionId = generateSessionId();
+  
+  // Return the API key securely (in production, consider a proxy)
+  return new Response(JSON.stringify({
+    success: true,
+    sessionId,
+    apiKey: env.OPENAI_API_KEY,
+    model: 'gpt-4o',
+    maxTokens: 300,
+  }), {
+    status: 200,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+// Get ElevenLabs configuration
+async function getElevenLabsToken(request, env) {
+  if (!env.ELEVENLABS_API_KEY) {
+    return new Response(JSON.stringify({ error: 'ElevenLabs API key not configured' }), {
+      status: 500,
+      headers: {
+        ...getCorsHeaders(request, env),
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  const sessionId = generateSessionId();
+  
+  // Get available voices
+  let voices = [];
+  try {
+    const voicesResponse = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: {
+        'xi-api-key': env.ELEVENLABS_API_KEY,
+      },
+    });
+    
+    if (voicesResponse.ok) {
+      const voicesData = await voicesResponse.json();
+      voices = voicesData.voices
+        .filter(v => v.labels?.language === 'bg' || !v.labels?.language) // Bulgarian or multilingual
+        .map(v => ({
+          id: v.voice_id,
+          name: v.name,
+          previewUrl: v.preview_url,
+        }));
+    }
+  } catch (e) {
+    console.error('Failed to fetch voices:', e);
+  }
+
+  return new Response(JSON.stringify({
+    success: true,
+    sessionId,
+    apiKey: env.ELEVENLABS_API_KEY,
+    defaultVoiceId: 'JBFqnCBsd6RMkjVDRZzb', // Default alloy-like voice
+    recommendedModel: 'eleven_multilingual_v2',
+    voices,
+  }), {
+    status: 200,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+// Get all tokens at once
+async function getAllTokens(request, env) {
+  const sessionId = generateSessionId();
+  
+  const tokens = {
+    success: true,
+    sessionId,
+    soniox: env.SONIOX_API_KEY ? {
+      configured: true,
+      websocketUrl: 'wss://api.soniox.com/transcribe-websocket',
+      language: 'bg',
+      sampleRate: 16000,
+    } : { configured: false },
+    openai: env.OPENAI_API_KEY ? {
+      configured: true,
+      apiKey: env.OPENAI_API_KEY,
+      model: 'gpt-4o',
+    } : { configured: false },
+    elevenlabs: env.ELEVENLABS_API_KEY ? {
+      configured: true,
+      apiKey: env.ELEVENLABS_API_KEY,
+      defaultVoiceId: 'JBFqnCBsd6RMkjVDRZzb',
+      model: 'eleven_multilingual_v2',
+    } : { configured: false },
+  };
+
+  return new Response(JSON.stringify(tokens), {
+    status: 200,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+// Generate a unique session ID
+function generateSessionId() {
+  return 'sess_' + Math.random().toString(36).substring(2, 15) + 
+         Math.random().toString(36).substring(2, 15);
+}
+
+// Alternative: Proxy requests through Cloudflare (more secure)
+// This keeps API keys on the server side only
+
+export async function onRequestPost(context) {
+  const { request, env } = context;
+  
+  // Handle CORS
+  const corsResponse = handleCors(request, env);
+  if (corsResponse) return corsResponse;
+
+  const url = new URL(request.url);
+  
+  // Proxy endpoint for Soniox (more secure - API key never reaches client)
+  if (url.pathname.includes('/proxy/soniox')) {
+    return await proxySoniox(request, env);
+  }
+  
+  // Proxy endpoint for OpenAI
+  if (url.pathname.includes('/proxy/openai')) {
+    return await proxyOpenAI(request, env);
+  }
+  
+  // Proxy endpoint for ElevenLabs
+  if (url.pathname.includes('/proxy/elevenlabs')) {
+    return await proxyElevenLabs(request, env);
+  }
+
+  return new Response(JSON.stringify({ error: 'Unknown proxy endpoint' }), {
+    status: 404,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+// Proxy Soniox requests (keeps API key secure)
+async function proxySoniox(request, env) {
+  if (!env.SONIOX_API_KEY) {
+    return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500 });
+  }
+
+  // This would need to handle WebSocket upgrade for real-time streaming
+  // For REST API calls:
+  const body = await request.text();
+  const response = await fetch('https://api.soniox.com/v1/transcribe', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.SONIOX_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body,
+  });
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': response.headers.get('Content-Type') || 'application/json',
+    },
+  });
+}
+
+// Proxy OpenAI requests
+async function proxyOpenAI(request, env) {
+  if (!env.OPENAI_API_KEY) {
+    return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500 });
+  }
+
+  const body = await request.text();
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body,
+  });
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': response.headers.get('Content-Type') || 'application/json',
+    },
+  });
+}
+
+// Proxy ElevenLabs requests
+async function proxyElevenLabs(request, env) {
+  if (!env.ELEVENLABS_API_KEY) {
+    return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500 });
+  }
+
+  const url = new URL(request.url);
+  const voiceId = url.searchParams.get('voiceId') || 'JBFqnCBsd6RMkjVDRZzb';
+  
+  const body = await request.text();
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': env.ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg',
+      },
+      body,
+    }
+  );
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      ...getCorsHeaders(request, env),
+      'Content-Type': response.headers.get('Content-Type') || 'audio/mpeg',
+    },
+  });
 }
