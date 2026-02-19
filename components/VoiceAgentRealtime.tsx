@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
-const TOKEN_URL = 'http://localhost:3002/session';
+const TOKEN_URL = import.meta.env.DEV ? 'http://localhost:3002/session' : '/session';
 
 type Status = 'idle' | 'connecting' | 'listening' | 'speaking';
 
